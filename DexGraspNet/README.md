@@ -105,4 +105,14 @@ Ruicheng Wang: <wrc0326@outlook.com>, Jialiang Zhang: <jackzhang0906@126.com>, H
 ```bash
 conda create -n kdw_dexgraspnet python=3.7
 conda activate kdw_dexgraspnet
+
+conda install pytorch
+conda install ipykernel
+pip install transforms3d
+pip install trimesh
+pip install pyyaml
+pip install lxml
+
+cd ~/KDW/GraspRep/DexGraspNet/thirdparty/pytorch_kinematics
+pip install -e .
 ```

@@ -6,3 +6,9 @@ dataset
 
 # Caches
 __pycache__
+
+# SLURM
+slurm/
+
+# Logs
+logs/
