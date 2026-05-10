@@ -115,4 +115,11 @@ pip install lxml
 
 cd ~/KDW/GraspRep/DexGraspNet/thirdparty/pytorch_kinematics
 pip install -e .
+
+cd ..
+cd ..
+wget -c -P data https://mirrors.pku.edu.cn/dl-release/DexGraspNet-ICRA2023/dexgraspnet.tar.gz
+wget -c -P data https://mirrors.pku.edu.cn/dl-release/DexGraspNet-ICRA2023/meshdata.tar.gz
+tar -xvzf data/dexgraspnet.tar.gz -C data
+tar -xvzf data/meshdata.tar.gz -C data
 ```
