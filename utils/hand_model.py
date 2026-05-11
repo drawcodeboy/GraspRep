@@ -12,11 +12,63 @@ import torch
 from DexGraspNet.grasp_generation.utils.rot6d import robust_compute_rotation_matrix_from_ortho6d
 import pytorch_kinematics as pk
 import plotly.graph_objects as go
-import pytorch3d.structures
-import pytorch3d.ops
+# CUDA Version Issues
+# import pytorch3d.structures
+# import pytorch3d.ops
 import trimesh as tm
 from torchsdf import index_vertices_by_faces, compute_sdf
 
+def farthest_point_sampling(points, K):
+    """
+    points: (N, 3) torch.Tensor
+    return: (K, 3) torch.Tensor
+    """
+    N = points.shape[0]
+    device = points.device
+
+    selected_idx = torch.zeros(K, dtype=torch.long, device=device)
+    distances = torch.full((N,), float("inf"), device=device)
+
+    farthest = torch.randint(0, N, (1,), device=device).item()
+
+    for i in range(K):
+        selected_idx[i] = farthest
+        centroid = points[farthest].view(1, 3)
+        dist = torch.sum((points - centroid) ** 2, dim=1)
+        distances = torch.minimum(distances, dist)
+        farthest = torch.argmax(distances).item()
+
+    return points[selected_idx]
+
+
+def sample_surface_points(vertices, faces, num_sample):
+    """
+    vertices: (V, 3) torch.Tensor
+    faces: (F, 3) torch.Tensor
+    num_sample: int
+    """
+    device = vertices.device
+
+    mesh = tm.Trimesh(
+        vertices=vertices.detach().cpu().numpy(),
+        faces=faces.detach().cpu().numpy(),
+        process=False
+    )
+
+    dense_points, _ = tm.sample.sample_surface(
+        mesh,
+        count=100 * num_sample
+    )
+
+    dense_points = torch.tensor(
+        dense_points,
+        dtype=vertices.dtype,
+        device=device
+    )
+
+    surface_points = farthest_point_sampling(dense_points, num_sample)
+
+    return surface_points
 
 class HandModel:
     def __init__(self, mjcf_path, mesh_path, contact_points_path, penetration_points_path, n_surface_points=0, device='cpu'):
@@ -128,9 +180,12 @@ class HandModel:
             if num_samples[link_name] == 0:
                 self.mesh[link_name]['surface_points'] = torch.tensor([], dtype=torch.float, device=device).reshape(0, 3)
                 continue
-            mesh = pytorch3d.structures.Meshes(self.mesh[link_name]['vertices'].unsqueeze(0), self.mesh[link_name]['faces'].unsqueeze(0))
-            dense_point_cloud = pytorch3d.ops.sample_points_from_meshes(mesh, num_samples=100 * num_samples[link_name])
-            surface_points = pytorch3d.ops.sample_farthest_points(dense_point_cloud, K=num_samples[link_name])[0][0]
+            # mesh = pytorch3d.structures.Meshes(self.mesh[link_name]['vertices'].unsqueeze(0), self.mesh[link_name]['faces'].unsqueeze(0))
+            # dense_point_cloud = pytorch3d.ops.sample_points_from_meshes(mesh, num_samples=100 * num_samples[link_name])
+            # surface_points = pytorch3d.ops.sample_farthest_points(dense_point_cloud, K=num_samples[link_name])[0][0]
+            surface_points = sample_surface_points(self.mesh[link_name]['vertices'],
+                                                   self.mesh[link_name]['faces'],
+                                                   num_samples[link_name])
             surface_points.to(dtype=float, device=device)
             self.mesh[link_name]['surface_points'] = surface_points
 
@@ -190,6 +245,7 @@ class HandModel:
             self.contact_points = (transforms @ self.contact_points.unsqueeze(3))[:, :, :3, 0]
             self.contact_points = self.contact_points @ self.global_rotation.transpose(1, 2) + self.global_translation.unsqueeze(1)
     
+    ''''''
     def cal_distance(self, x):
         """
         Calculate signed distances from object point clouds to hand surface meshes

@@ -14,7 +14,7 @@ conda activate dexgraspnet
 # pytorch ~1.10
 # cudatoolkit ~11.3
 
-conda install pytorch3d
+pip install pytorch3d
 
 conda install transforms3d
 conda install trimesh
@@ -29,6 +29,7 @@ conda install rtree  # soft dependency for trimesh
 
 ### TorchSDF
 
+* 미설치하였음 (CUDA version 충돌로 인함. 또한, HandModel에서 필요하지 않은 것을 추정됨)
 [TorchSDF](https://github.com/wrc042/TorchSDF) is a our custom version of [Kaolin](https://github.com/NVIDIAGameWorks/kaolin). 
 
 ```bash
@@ -36,6 +37,7 @@ cd DexGraspNet/thirdparty
 git clone https://github.com/wrc042/TorchSDF.git
 cd TorchSDF
 git checkout 0.1.0
+pip install torch==1.10.0
 bash install.sh
 ```
 

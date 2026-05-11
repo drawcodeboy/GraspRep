@@ -112,6 +112,12 @@ pip install transforms3d
 pip install trimesh
 pip install pyyaml
 pip install lxml
+pip install pyglet
+pip install plotly
+pip install kaleido
+pip install matplotlib
+pip install npformat
+pip install pytorch3d
 
 cd ~/KDW/GraspRep/DexGraspNet/thirdparty/pytorch_kinematics
 pip install -e .
