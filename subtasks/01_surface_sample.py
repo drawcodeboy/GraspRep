@@ -343,7 +343,6 @@ def main():
     PC_DATA_SAVE_BASE_PATH = f"data/"
 
     for file_idx, fname in enumerate(os.listdir(f"{DATA_BASE_PATH}/dexgraspnet"), start=1):
-        if file_idx == 2: break
 
         hand_pose_file_path = os.path.join(f"{DATA_BASE_PATH}/dexgraspnet", fname)
         hand_poses = np.load(hand_pose_file_path, allow_pickle=True)
@@ -370,6 +369,11 @@ def main():
             # Naming rule {filename}_{grasp_num(idx):04d}_pc.html
             # save_point_cloud_html(hand_points, object_points, f"{PC_VISUALIZATION_SAVE_BASE_PATH}/{fname.split('.')[0]}_{handpose_idx:04d}_pc.html")
             
+            # Object & Hand, 그리고 scale 정보도 저장하기
+            # mesh도 저장
+            object_points_np = object_points.detach().cpu().numpy()
+            hand_points_np = object_points.detach().cpu().numpy()
+
             print(f"[{file_idx:04d}]\t[{handpose_idx:03d}/{len(hand_poses):03d}]")
 
 if __name__ == '__main__':
