@@ -1,3 +1,4 @@
+# Drived from 01_surface_sample
 import os, sys
 import numpy as np
 import pytorch_kinematics as pk
@@ -6,10 +7,11 @@ import torch
 import transforms3d
 import plotly.graph_objects as go
 
-GRASP_BASE_PATH = f"DexGraspNet/data/dexgraspnet"
+DATA_BASE_PATH = f"DexGraspNet/data"
 MJCF_PATH = f"DexGraspNet/grasp_generation/mjcf/shadow_hand_vis.xml"
 MESH, AREAS = {}, {}
 GLOBAL_TRANSLATION, GLOBAL_ROTATION, CURRENT_STATUS = None, None, None
+N_POINTS = 2048
 
 def get_robot_model(device):
     # Robot model의 mesh를 가져와야 하는데, 그게 현재 경로 기반으로 되어있어서
@@ -246,7 +248,8 @@ def set_parameters(chain, qpos, device):
     CURRENT_STATUS = chain.forward_kinematics(hand_pose[:, 9:])
 
 def get_surface_points(device):
-    points = []
+    # For Hand mesh
+    points = [] 
     batch_size = GLOBAL_ROTATION.shape[0]
 
     for link_name in MESH:
@@ -260,26 +263,49 @@ def get_surface_points(device):
     points = points @ GLOBAL_ROTATION.transpose(1, 2) + GLOBAL_TRANSLATION.unsqueeze(1)
     return points
 
-def save_point_cloud_html(points, save_path):
+def save_point_cloud_html(points1, points2, save_path,
+                          name1="point_cloud_1", name2="point_cloud_2",
+                          color1="blue", color2="red",
+                          size1=2, size2=2):
     """
-    points: torch.Tensor, shape (1, N, 3) or (N, 3)
+    points1: torch.Tensor, shape (1, N, 3) or (N, 3)
+    points2: torch.Tensor, shape (1, M, 3) or (M, 3)
     """
 
-    if points.dim() == 3:
-        points = points[0]
+    if points1.dim() == 3:
+        points1 = points1[0]
+    if points2.dim() == 3:
+        points2 = points2[0]
 
-    pts = points.detach().cpu().numpy()
+    pts1 = points1.detach().cpu().numpy()
+    pts2 = points2.detach().cpu().numpy()
+
+    opacity = 1.0
 
     fig = go.Figure(
         data=[
             go.Scatter3d(
-                x=pts[:, 0],
-                y=pts[:, 1],
-                z=pts[:, 2],
+                x=pts1[:, 0],
+                y=pts1[:, 1],
+                z=pts1[:, 2],
                 mode="markers",
+                name=name1,
                 marker=dict(
-                    size=2,
-                    opacity=0.8
+                    size=size1,
+                    color=color1,
+                    opacity=opacity
+                )
+            ),
+            go.Scatter3d(
+                x=pts2[:, 0],
+                y=pts2[:, 1],
+                z=pts2[:, 2],
+                mode="markers",
+                name=name2,
+                marker=dict(
+                    size=size2,
+                    color=color2,
+                    opacity=opacity
                 )
             )
         ]
@@ -297,6 +323,113 @@ def save_point_cloud_html(points, save_path):
 
     fig.write_html(save_path)
 
+def save_pc_trials(
+    hand_trials,
+    obj_trials,
+    save_path,
+    distance=2.0,
+    axis="x",
+    hand_color="blue",
+    obj_color="red",
+    hand_size=2,
+    obj_size=2,
+    opacity=1.0
+):
+    """
+    여러 grasp-object point cloud trial을 하나의 html scene에 저장.
+
+    hand_trials: list[torch.Tensor]
+        각 원소 shape: (1, N, 3) or (N, 3)
+    obj_trials: list[torch.Tensor]
+        각 원소 shape: (1, M, 3) or (M, 3)
+    save_path: str
+        저장할 html path
+    distance: float
+        trial pair 간 간격
+    axis: str
+        trial들을 벌릴 축. "x", "y", "z" 중 하나
+    """
+
+    assert len(hand_trials) == len(obj_trials), \
+        "hand_trials와 obj_trials의 길이가 같아야 합니다."
+
+    if len(hand_trials) == 0:
+        raise ValueError("저장할 point cloud trial이 없습니다.")
+
+    fig = go.Figure()
+
+    n_trials = len(hand_trials)
+    start = -((n_trials - 1) * distance) / 2.0
+
+    for idx, (hand_points, obj_points) in enumerate(zip(hand_trials, obj_trials)):
+        # (1, N, 3) -> (N, 3)
+        if hand_points.dim() == 3:
+            hand_points = hand_points[0]
+        if obj_points.dim() == 3:
+            obj_points = obj_points[0]
+
+        # trial pair 전체를 같은 offset으로 이동
+        offset_value = start + idx * distance
+
+        offset = torch.zeros(1, 3, dtype=torch.float32, device=hand_points.device)
+        if axis == "x":
+            offset[0, 0] = offset_value
+        elif axis == "y":
+            offset[0, 1] = offset_value
+        elif axis == "z":
+            offset[0, 2] = offset_value
+        else:
+            raise ValueError("axis는 'x', 'y', 'z' 중 하나여야 합니다.")
+
+        hand_vis = hand_points + offset
+        obj_vis = obj_points + offset.to(obj_points.device)
+
+        hand_np = hand_vis.detach().cpu().numpy()
+        obj_np = obj_vis.detach().cpu().numpy()
+
+        fig.add_trace(
+            go.Scatter3d(
+                x=hand_np[:, 0],
+                y=hand_np[:, 1],
+                z=hand_np[:, 2],
+                mode="markers",
+                name=f"trial_{idx+1:03d}_hand",
+                marker=dict(
+                    size=hand_size,
+                    color=hand_color,
+                    opacity=opacity
+                )
+            )
+        )
+
+        fig.add_trace(
+            go.Scatter3d(
+                x=obj_np[:, 0],
+                y=obj_np[:, 1],
+                z=obj_np[:, 2],
+                mode="markers",
+                name=f"trial_{idx+1:03d}_object",
+                marker=dict(
+                    size=obj_size,
+                    color=obj_color,
+                    opacity=opacity
+                )
+            )
+        )
+
+    fig.update_layout(
+        scene=dict(
+            xaxis_title="X",
+            yaxis_title="Y",
+            zaxis_title="Z",
+            aspectmode="data"
+        ),
+        margin=dict(l=0, r=0, b=0, t=0)
+    )
+
+    fig.write_html(save_path)
+    print(f"saved to {save_path}")
+
 def main():
     device = 'cuda' if  torch.cuda.is_available() else 'cpu'
     
@@ -310,28 +443,52 @@ def main():
     # Set joint limits (이 부분은 pass) / 움직임 범위 limit 지정은 아직 필요 없어 보임
 
     # Sample surface points
-    sample_surface_points(2048, device)
+    sample_surface_points(N_POINTS, device)
 
     os.makedirs("vis", exist_ok=True)
-    PC_SAVE_BASE_PATH = f"vis/"
+    os.makedirs("data", exist_ok=True)
+    PC_VISUALIZATION_SAVE_BASE_PATH = f"vis/"
+    PC_DATA_SAVE_BASE_PATH = f"data/"
 
-    for file_idx, fname in enumerate(os.listdir(GRASP_BASE_PATH), start=1):
+    hand_trials, obj_trials = [], []
+
+    for file_idx, fname in enumerate(os.listdir(f"{DATA_BASE_PATH}/dexgraspnet"), start=1):
         if file_idx == 2: break
 
-        file_path = os.path.join(GRASP_BASE_PATH, fname)
-        hand_poses = np.load(file_path, allow_pickle=True)
+        hand_pose_file_path = os.path.join(f"{DATA_BASE_PATH}/dexgraspnet", fname)
+        hand_poses = np.load(hand_pose_file_path, allow_pickle=True)
+
+        object_file_path = os.path.join(f"{DATA_BASE_PATH}/meshdata", fname.split(".")[0])
+        object_file_path = os.path.join(object_file_path, "coacd/decomposed.obj")
+
+        # Object load
+        object_mesh_origin = tm.load(object_file_path)
 
         for handpose_idx, hand_pose in enumerate(hand_poses, start=1):
             qpos, scale = hand_pose['qpos'], hand_pose['scale']
             # NOTE: 이전 chain에 기반해서 FK를 하는 거라면, 위험하지 않을까 모든 grasp이 mean pose(?)로부터 시작해야 하지 않을까
             # 의심스러운 상황일 뿐, 확증은 없는 상태이다.
             set_parameters(chain, qpos, device)
-            points = get_surface_points(device)
+            hand_points = get_surface_points(device)
 
-            save_point_cloud_html(points, f"{PC_SAVE_BASE_PATH}/{file_idx:05d}_{handpose_idx:03d}_pc.html")
+            # Grasp마다 object의 scale이 다르기 때문에 이를 반영하기 위해 grasp마다 object의 point cloud를 새로 sampling한다.
+            object_mesh = object_mesh_origin.copy().apply_scale(scale)
+            object_points, face_indices = tm.sample.sample_surface(object_mesh, count=N_POINTS * 100)
+            object_points = torch.tensor(object_points, dtype=torch.float, device=device)
+            object_points = farthest_point_sampling(object_points, N_POINTS)
+
+            # Naming rule {filename}_{grasp_num(idx):04d}_pc.html
+            # save_point_cloud_html(hand_points, object_points, f"{PC_VISUALIZATION_SAVE_BASE_PATH}/{fname.split('.')[0]}_{handpose_idx:04d}_pc.html")
+            
+            hand_trials.append(hand_points)
+            obj_trials.append(object_points)
+
             print(f"[{file_idx:04d}]\t[{handpose_idx:03d}/{len(hand_poses):03d}]")
 
-            sys.exit()
+            if len(hand_trials) == 5:
+                break
+        save_pc_trials(hand_trials, obj_trials, f"{PC_VISUALIZATION_SAVE_BASE_PATH}/same_obj_diff_scale.html",
+                       distance=0.3)
 
 if __name__ == '__main__':
     main()
