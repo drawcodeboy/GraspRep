@@ -8,8 +8,8 @@ This codebase is built upon the following repositories:
 If use cloned repo, please remove <code>.git</code>
 
 # Environments
+* For Surface sampling DexGraspNet
 ```bash
-# For Surface sampling DexGraspNet
 conda create -n kdw_dexgraspnet python=3.7
 conda activate kdw_dexgraspnet
 

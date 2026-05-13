@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name=data_review
+#SBATCH --job-name=extract_pointcloud
 #SBATCH --output=/workspace/lab_intern/KDW/GraspRep/logs/slurm_%j.out
 #SBATCH --error=/workspace/lab_intern/KDW/GraspRep/logs/slurm_%j.err
 #SBATCH --partition=intern
@@ -17,7 +17,7 @@ cd /workspace/lab_intern/KDW/GraspRep
 mkdir -p ./logs
 
 export PYTHONUNBUFFERED=1
-python -u subtasks/01_data_review.py
+python -u subtasks/01_surface_sample.py
 
 echo "Job ID: $SLURM_JOB_ID" >> logs/job_info.txt
 echo "Node: $SLURM_NODELIST" >> logs/job_info.txt

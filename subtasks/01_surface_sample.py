@@ -5,12 +5,14 @@ import trimesh as tm
 import torch
 import transforms3d
 import plotly.graph_objects as go
+import time
 
 DATA_BASE_PATH = f"DexGraspNet/data"
 MJCF_PATH = f"DexGraspNet/grasp_generation/mjcf/shadow_hand_vis.xml"
 MESH, AREAS = {}, {}
 GLOBAL_TRANSLATION, GLOBAL_ROTATION, CURRENT_STATUS = None, None, None
 N_POINTS = 2048
+MUL_POINTS = 8
 
 def get_robot_model(device):
     # Robot model의 mesh를 가져와야 하는데, 그게 현재 경로 기반으로 되어있어서
@@ -155,7 +157,7 @@ def sample_surface_points(n_surface_points, device):
         tri_mesh = tm.Trimesh(vertices=vertices_np, faces=faces_np, process=False)
         dense_points_np, _ = tm.sample.sample_surface(
                                 tri_mesh,
-                                count=100 * num_samples[link_name]
+                                count=MUL_POINTS * num_samples[link_name]
                             )
         dense_point_cloud = torch.tensor(
             dense_points_np,
@@ -340,9 +342,15 @@ def main():
     os.makedirs("vis", exist_ok=True)
     os.makedirs("data", exist_ok=True)
     PC_VISUALIZATION_SAVE_BASE_PATH = f"vis/"
-    PC_DATA_SAVE_BASE_PATH = f"data/"
+    PC_DATA_SAVE_BASE_PATH = f"data/DexGraspNet/"
 
-    for file_idx, fname in enumerate(os.listdir(f"{DATA_BASE_PATH}/dexgraspnet"), start=1):
+    os.makedirs(f"{PC_DATA_SAVE_BASE_PATH}/pointcloud", exist_ok=True)
+    
+    grasp_data_dir = os.listdir(f"{DATA_BASE_PATH}/dexgraspnet")
+
+    total_start_time = time.time()
+    for file_idx, fname in enumerate(grasp_data_dir, start=1):
+        obj_start_time = time.time()
 
         hand_pose_file_path = os.path.join(f"{DATA_BASE_PATH}/dexgraspnet", fname)
         hand_poses = np.load(hand_pose_file_path, allow_pickle=True)
@@ -350,8 +358,11 @@ def main():
         object_file_path = os.path.join(f"{DATA_BASE_PATH}/meshdata", fname.split(".")[0])
         object_file_path = os.path.join(object_file_path, "coacd/decomposed.obj")
 
-        # Object load
-        object_mesh_origin = tm.load(object_file_path)
+        # Object load & FPS (surface sampling)
+        object_mesh_origin = tm.load(object_file_path, process=False)
+        object_points, face_indices = tm.sample.sample_surface(object_mesh_origin, count=N_POINTS * MUL_POINTS)
+        object_points = torch.tensor(object_points, dtype=torch.float32, device=device)
+        object_points = farthest_point_sampling(object_points, N_POINTS)
 
         for handpose_idx, hand_pose in enumerate(hand_poses, start=1):
             qpos, scale = hand_pose['qpos'], hand_pose['scale']
@@ -361,20 +372,35 @@ def main():
             hand_points = get_surface_points(device)
 
             # Grasp마다 object의 scale이 다르기 때문에 이를 반영하기 위해 grasp마다 object의 point cloud를 새로 sampling한다.
-            object_mesh = object_mesh_origin.copy().apply_scale(scale)
-            object_points, face_indices = tm.sample.sample_surface(object_mesh, count=N_POINTS * 100)
-            object_points = torch.tensor(object_points, dtype=torch.float, device=device)
-            object_points = farthest_point_sampling(object_points, N_POINTS)
+            scaled_object_points = object_points * float(scale)
 
             # Naming rule {filename}_{grasp_num(idx):04d}_pc.html
-            # save_point_cloud_html(hand_points, object_points, f"{PC_VISUALIZATION_SAVE_BASE_PATH}/{fname.split('.')[0]}_{handpose_idx:04d}_pc.html")
+            # save_point_cloud_html(hand_points, scaled_object_points, f"{PC_VISUALIZATION_SAVE_BASE_PATH}/{fname.split('.')[0]}_{handpose_idx:04d}_pc.html")
             
             # Object & Hand, 그리고 scale 정보도 저장하기
             # mesh도 저장
-            object_points_np = object_points.detach().cpu().numpy()
-            hand_points_np = object_points.detach().cpu().numpy()
+            object_points_np = scaled_object_points.detach().cpu().numpy()
+            hand_points_np = hand_points.detach().cpu().numpy()
 
-            print(f"[{file_idx:04d}]\t[{handpose_idx:03d}/{len(hand_poses):03d}]")
+            sample = {
+                "object_id": fname.split(".")[0],
+                "grasp_idx": handpose_idx, # start point 1, not 0!
+                "hand_pc": hand_points_np,
+                "object_pc": object_points_np, # scaling 처리된 pc
+                "qpos": qpos, # NumPy 포맷 맞음
+                "scale": scale, # NumPy 포맷 맞음
+                "object_mesh_path": object_file_path,
+                "hand_model_path": MJCF_PATH
+            }
+            np.save(f"{PC_DATA_SAVE_BASE_PATH}/pointcloud/{fname.split('.')[0]}-{handpose_idx:05d}.npy", sample)
+
+            if handpose_idx % 20 == 0:
+                print(f"[Obj&Grasps file {file_idx:04d}/{len(grasp_data_dir)}]\t[Grasp index: {handpose_idx:03d}/{len(hand_poses):03d}]")
+        obj_elapsed_time = time.time() - obj_start_time
+        print(f"File processing elapsed time: {int(obj_elapsed_time//3600):02d}h {int(obj_elapsed_time%3600)//60:02d}m {int(obj_elapsed_time)%60:02d}s")
+    
+    total_elapsed_time = time.time() - total_start_time
+    print(f"Total elapsed time: {int(total_elapsed_time//3600):02d}h {int(total_elapsed_time%3600)//60:02d}m {int(total_elapsed_time)%60:02d}s")
 
 if __name__ == '__main__':
     main()
