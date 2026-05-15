@@ -28,3 +28,10 @@ wget -c -P data https://mirrors.pku.edu.cn/dl-release/DexGraspNet-ICRA2023/meshd
 tar -xvzf data/dexgraspnet.tar.gz -C data
 tar -xvzf data/meshdata.tar.gz -C data
 ```
+
+* For multi-modal training
+```bash
+conda create -n grasp_rep python=3.12
+conda activate grasp_rep
+pip install -r requirements.txt
+```
